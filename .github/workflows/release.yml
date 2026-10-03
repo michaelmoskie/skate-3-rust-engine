@@ -1,7 +1,7 @@
 name: Windows release
 on:
   push:
-    branches: ['**']
+    branches-ignore: [macos]
   release:
     types: [published]
   workflow_dispatch:
