@@ -23,7 +23,8 @@ jobs:
       - name: Test platform adapters and release tools
         run: |
           cargo test --locked -p skate-game --bin skate3rust --no-default-features input::platform
-          python3 -m unittest tools.test_updater tools.test_update_install
+          cd tools
+          python3 -m unittest test_updater test_update_install
 
   package:
     if: github.event_name != 'pull_request'
