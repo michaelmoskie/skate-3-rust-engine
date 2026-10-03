@@ -11,11 +11,13 @@ Install the stable Rust toolchain, then build and launch with:
 
 ```sh
 scripts/Build-macOS.sh
-SKATE3_ASSETS="/path/to/prepared/assets" scripts/Launch-macOS.sh
+scripts/Launch-macOS.sh
 ```
 
-`assets/` is used when `SKATE3_ASSETS` is not set. The game assets are not part
-of this repository.
+The launcher automatically uses the active installation under
+`~/Library/Application Support/Skate3RustEngine/data`. Set `SKATE3_ASSETS` only
+when overriding that location for development or test assets. The game assets
+are not part of this repository.
 
 ## Packaged application
 
