@@ -1,6 +1,9 @@
-//! Windows device transport. Raw signed axes/trigger bytes reach the TU3
-//! converter without Bevy/gilrs deadzones or normalized-axis reconstruction.
+//! Device transport. Windows preserves raw XInput samples; other platforms
+//! quantize Bevy's standardized gamepad state into the same TU3 input packet.
 use skate_core::input::xbox::XboxState;
+
+#[cfg(target_os = "macos")]
+pub(crate) mod macos;
 
 pub(crate) struct DevicePacket {
     pub number: u32,
@@ -11,10 +14,10 @@ pub(crate) struct DevicePacket {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DeviceError {
     Disconnected,
+    #[cfg(windows)]
     State(u32),
+    #[cfg(any(windows, test))]
     Capabilities(u32),
-    #[cfg(not(windows))]
-    UnsupportedPlatform,
 }
 
 /// Device identity is metadata; raw input is still sampled every host frame.
@@ -28,6 +31,7 @@ impl CapabilityCache {
     pub(crate) fn invalidate(&mut self) {
         self.value = None;
     }
+    #[cfg(windows)]
     fn get(
         &mut self,
         now: std::time::Instant,
@@ -130,18 +134,61 @@ mod windows {
     }
 }
 
+#[cfg(windows)]
 pub(crate) fn poll_cached(
     index: usize,
     cache: &mut CapabilityCache,
 ) -> Result<DevicePacket, DeviceError> {
     assert!(index < 4);
-    #[cfg(windows)]
-    return windows::poll(index as u32, cache);
-    #[cfg(not(windows))]
-    Err(DeviceError::UnsupportedPlatform)
+    windows::poll(index as u32, cache)
 }
 
-#[cfg(test)]
+#[cfg(not(windows))]
+pub(crate) fn from_gamepad(gamepad: &bevy::input::gamepad::Gamepad, number: u32) -> DevicePacket {
+    use bevy::input::gamepad::{GamepadAxis as Axis, GamepadButton as Button};
+
+    let pressed = |button| gamepad.pressed(button);
+    let mut buttons = 0;
+    for (button, mask) in [
+        (Button::DPadUp, 0x0001),
+        (Button::DPadDown, 0x0002),
+        (Button::DPadLeft, 0x0004),
+        (Button::DPadRight, 0x0008),
+        (Button::Start, 0x0010),
+        (Button::Select, 0x0020),
+        (Button::LeftThumb, 0x0040),
+        (Button::RightThumb, 0x0080),
+        (Button::LeftTrigger, 0x0100),
+        (Button::RightTrigger, 0x0200),
+        (Button::South, 0x1000),
+        (Button::East, 0x2000),
+        (Button::West, 0x4000),
+        (Button::North, 0x8000),
+    ] {
+        if pressed(button) {
+            buttons |= mask;
+        }
+    }
+    let trigger = |button| {
+        (gamepad.get(button).unwrap_or(0.0).clamp(0.0, 1.0) * 255.0).round() as u8
+    };
+    let axis = |axis| {
+        let value = gamepad.get(axis).unwrap_or(0.0).clamp(-1.0, 1.0);
+        (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
+    };
+    DevicePacket {
+        number,
+        state: XboxState {
+            buttons,
+            triggers: [trigger(Button::LeftTrigger2), trigger(Button::RightTrigger2)],
+            left: [axis(Axis::LeftStickX), axis(Axis::LeftStickY)],
+            right: [axis(Axis::RightStickX), axis(Axis::RightStickY)],
+        },
+        subtype: 1,
+    }
+}
+
+#[cfg(all(test, windows))]
 mod cache_tests {
     use super::*;
     #[test]
@@ -170,7 +217,30 @@ mod cache_tests {
     }
 }
 
+#[cfg(all(test, not(windows)))]
+mod portable_tests {
+    use super::*;
+    use bevy::input::gamepad::{Gamepad, GamepadAxis as Axis, GamepadButton as Button};
+
+    #[test]
+    fn standardized_gamepad_is_quantized_as_xinput() {
+        let mut gamepad = Gamepad::default();
+        gamepad.digital_mut().press(Button::South);
+        gamepad.digital_mut().press(Button::DPadLeft);
+        gamepad.analog_mut().set(Button::LeftTrigger2, 0.5);
+        gamepad.analog_mut().set(Axis::LeftStickX, -1.0);
+        gamepad.analog_mut().set(Axis::RightStickY, 1.0);
+        let packet = from_gamepad(&gamepad, 7);
+        assert_eq!(packet.number, 7);
+        assert_eq!(packet.state.buttons, 0x1004);
+        assert_eq!(packet.state.triggers, [128, 0]);
+        assert_eq!(packet.state.left, [i16::MIN, 0]);
+        assert_eq!(packet.state.right, [0, i16::MAX]);
+    }
+}
+
 // Preserve the uncached API for menu-only polling.
+#[cfg(windows)]
 pub(crate) fn poll(index: usize) -> Result<DevicePacket, DeviceError> {
     poll_cached(index, &mut CapabilityCache::default())
 }

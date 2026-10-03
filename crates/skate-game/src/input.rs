@@ -34,15 +34,31 @@ impl Plugin for InputPlugin {
     }
 }
 
-pub(crate) fn poll_controllers(mut input: ResMut<ControllerInput>,config:Res<crate::config::Config>,net:Option<Res<crate::multiplayer::Multiplayer>>,windows:Query<&Window>,mut capabilities:Local<[platform::CapabilityCache;4]>) {
+pub(crate) fn poll_controllers(mut input: ResMut<ControllerInput>,config:Res<crate::config::Config>,net:Option<Res<crate::multiplayer::Multiplayer>>,windows:Query<&Window>,mut capabilities:Local<[platform::CapabilityCache;4]>,
+    #[cfg(all(not(windows), not(target_os = "macos")))] gamepads: Query<(Entity, &Gamepad)>,
+    #[cfg(not(windows))] mut packet_number: Local<u32>,
+) {
     let previous = input.status;
     let focused=windows.iter().any(|w|w.focused);
     let active=net.is_some_and(|n|n.active());
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let mut gamepads = gamepads.iter().collect::<Vec<_>>();
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    gamepads.sort_unstable_by_key(|(entity, _)| entity.to_bits());
+    #[cfg(not(windows))]
+    { *packet_number = packet_number.wrapping_add(1); }
     input.collect(std::array::from_fn(|slot| {
         if active && ((!focused && config.multiplayer.controller.is_none()) || config.multiplayer.controller.is_some_and(|selected|selected as usize!=slot)) {
             capabilities[slot].invalidate();
             Err(platform::DeviceError::Disconnected)
-        } else {platform::poll_cached(slot, &mut capabilities[slot])}
+        } else {
+            #[cfg(windows)]
+            { platform::poll_cached(slot, &mut capabilities[slot]) }
+            #[cfg(target_os = "macos")]
+            { platform::macos::poll(slot, *packet_number) }
+            #[cfg(all(not(windows), not(target_os = "macos")))]
+            { gamepads.get(slot).map(|(_, pad)| platform::from_gamepad(pad, *packet_number)).ok_or(platform::DeviceError::Disconnected) }
+        }
     }));
     for (index, (&before, &after)) in previous.iter().zip(&input.status).enumerate() {
         if before != after {

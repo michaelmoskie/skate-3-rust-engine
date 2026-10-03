@@ -239,8 +239,16 @@ impl Plugin for CustomiserPlugin {
             );
     }
 }
-pub(crate) fn navigation(mut nav: ResMut<Navigation>, time: Res<Time<Real>>, keys: Res<ButtonInput<KeyCode>>) {
+pub(crate) fn navigation(mut nav: ResMut<Navigation>, time: Res<Time<Real>>, keys: Res<ButtonInput<KeyCode>>,
+    #[cfg(all(not(windows), not(target_os = "macos")))] gamepads: Query<(Entity, &Gamepad)>,
+) {
+    #[cfg(windows)]
     let pad = (0..4).find_map(|i| crate::input::platform::poll(i).ok());
+    #[cfg(target_os = "macos")]
+    let pad = crate::input::platform::macos::poll(0, 0).ok();
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let pad = gamepads.iter().min_by_key(|(entity, _)| entity.to_bits())
+        .map(|(_, gamepad)| crate::input::platform::from_gamepad(gamepad, 0));
     // Remap outside the dead zone so a resting stick cannot drift the preview.
     let axis = pad.as_ref().map_or(0., |p| (p.state.right[0] as f32 / 32767.).clamp(-1., 1.));
     nav.preview_turn = axis.signum() * ((axis.abs() - 0.24) / 0.76).max(0.);

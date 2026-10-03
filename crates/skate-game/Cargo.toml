@@ -36,6 +36,9 @@ skate-mods = { path = "../skate-mods" }
 skate-dynamics = { path = "../skate-dynamics" }
 gltf = { version = "=1.4.1", default-features = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-game-controller = { version = "0.3.2", features = ["GCController", "GCControllerElement", "GCExtendedGamepad", "GCControllerButtonInput", "GCControllerDirectionPad"] }
+
 [dev-dependencies]
 naga = { version = "=27.0.3", features = ["wgsl-in"] }
 naga_oil = { version = "=0.20.0", default-features = false }
