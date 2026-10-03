@@ -1,4 +1,4 @@
-"""Windows drag-and-drop / file-dialog entry point, also usable from the CLI."""
+"""Desktop file-dialog entry point, also usable from the CLI."""
 import argparse
 import json
 import os
@@ -13,13 +13,14 @@ def app_root():
     # Release setup carries source + native resources under its extraction root.
     # A standalone frozen converter retains its legacy adjacent resource layout.
     bundled = Path(__file__).resolve().parent
-    if (bundled/'tools/FBX2glTF.exe').is_file():
+    if any((bundled/'tools'/name).is_file() for name in ('FBX2glTF.exe','FBX2glTF')):
         return bundled
     return Path(sys.executable).parent if getattr(sys,'frozen',False) else bundled
 
 
 def find_reference(expected_hash=None):
-    base = Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'Skate3RustEngine/installations'
+    base = ((Path.home()/'Library/Application Support/Skate3RustEngine/data') if sys.platform=='darwin'
+            else Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'Skate3RustEngine')/'installations'
     candidates = sorted(base.glob('*/assets/private/skater.glb'))
     if expected_hash:
         candidates = [p for p in candidates if sha(p)==expected_hash]
@@ -77,7 +78,7 @@ def main(argv=None):
             profile_path.write_text(json.dumps(create_profile(args.files[0],reference),indent=2),encoding='utf-8')
             print('Calibration saved:',profile_path)
             return 0
-        tool = args.fbx_tool or app_root()/'tools/FBX2glTF.exe'
+        tool = args.fbx_tool or app_root()/'tools'/('FBX2glTF' if sys.platform=='darwin' else 'FBX2glTF.exe')
         outputs = []
         for source in args.files:
             destination = args.output

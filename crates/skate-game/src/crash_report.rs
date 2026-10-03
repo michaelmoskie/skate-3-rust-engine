@@ -161,7 +161,20 @@ fn reader(
     })
 }
 
+#[allow(unreachable_code)] // macOS returns before the Windows/Linux supervisor.
 pub(crate) fn entry() -> Option<i32> {
+    // App bundles launched by LaunchServices can be denied permission to spawn
+    // their own main executable again. Keep macOS startup direct; the child
+    // path below still installs the same panic hook, so diagnostics remain in
+    // the launch console instead of preventing the game from opening.
+    #[cfg(target_os = "macos")]
+    {
+        if std::env::var_os(CHILD).is_some() {
+            unsafe { std::env::remove_var(CHILD); }
+        }
+        install_panic_hook();
+        return None;
+    }
     if std::env::var_os(CHILD).is_some() {
         // Entry runs before game threads. Do not let setup/relay descendants
         // accidentally pass the supervisor bypass marker to a later game launch.
@@ -317,10 +330,17 @@ fn report(capture: &Capture, outcome: &str, elapsed: f64) -> String {
 }
 
 fn save(text: &str) -> std::io::Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let application_data = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Library/Application Support");
+    #[cfg(not(target_os = "macos"))]
+    let application_data = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
     let roots = [
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir),
+        application_data,
         std::env::temp_dir(),
     ];
     let mut error = None;
@@ -394,6 +414,14 @@ fn popup(path: &Path) -> std::io::Result<()> {
     }
     #[cfg(not(windows))]
     {
+        #[cfg(target_os = "macos")]
+        {
+            let status = Command::new("open").arg("-R").arg(path).status()?;
+            if !status.success() {
+                return Err(std::io::Error::other("Could not reveal crash report"));
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         let _ = path;
     }
     Ok(())

@@ -34,6 +34,13 @@ fn wgpu_features() -> WgpuFeatures {
     }
 }
 
+fn render_backends() -> Backends {
+    #[cfg(target_os = "macos")]
+    return Backends::METAL;
+    #[cfg(not(target_os = "macos"))]
+    return Backends::VULKAN;
+}
+
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub(crate) enum FrameSet {
     Assets,
@@ -60,8 +67,7 @@ pub(crate) fn build(
     let mut app = App::new();
     crate::custom_models::register_source(&mut app);
     crate::modding::register_source(&mut app);
-    app.add_plugins(
-        DefaultPlugins
+    let plugins = DefaultPlugins
             .set(AssetPlugin {
                 file_path: config.asset_root.to_string_lossy().into_owned(),
                 ..default()
@@ -76,7 +82,7 @@ pub(crate) fn build(
             })
             .set(RenderPlugin {
                 render_creation: RenderCreation::Automatic(WgpuSettings {
-                    backends: Some(Backends::VULKAN),
+                    backends: Some(render_backends()),
                     // Existing machine's validation layer rejects wgpu atomic shaders.
                     // This workaround belongs only to the rendering adapter.
                     instance_flags: InstanceFlags::empty(),
@@ -84,12 +90,12 @@ pub(crate) fn build(
                     ..default()
                 }),
                 ..default()
-            }).build().disable::<bevy::log::LogPlugin>()
-            // Gameplay and menu navigation both use raw XInput. No game system
-            // consumes Bevy gamepad events/rumble; its second device backend can
-            // stall PreUpdate (70.68 ms in the University capture).
-            .disable::<bevy::gilrs::GilrsPlugin>(),
-    )
+            }).build().disable::<bevy::log::LogPlugin>();
+    // Gameplay and menu navigation use raw XInput on Windows. Its second
+    // device backend can stall PreUpdate (70.68 ms in the University capture).
+    #[cfg(windows)]
+    let plugins = plugins.disable::<bevy::gilrs::GilrsPlugin>();
+    app.add_plugins(plugins)
     .insert_resource(bevy::winit::WinitSettings {focused_mode:bevy::winit::UpdateMode::Continuous,unfocused_mode:bevy::winit::UpdateMode::Continuous})
     .insert_resource(config)
     .insert_resource(crate::retail_render::RetailScene(retail_scene))

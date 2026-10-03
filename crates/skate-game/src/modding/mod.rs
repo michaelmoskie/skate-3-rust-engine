@@ -250,6 +250,15 @@ pub(crate) fn package_root() -> std::path::PathBuf {
     std::env::var_os("SKATE3_MODS")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
+            #[cfg(target_os = "macos")]
+            {
+                let root = std::env::var_os("HOME").map(std::path::PathBuf::from)
+                    .unwrap_or_else(std::env::temp_dir)
+                    .join("Library/Application Support/Skate3RustEngine/mods");
+                let _ = std::fs::create_dir_all(&root);
+                return root;
+            }
+            #[cfg(not(target_os = "macos"))]
             std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|p| p.join("mods")))

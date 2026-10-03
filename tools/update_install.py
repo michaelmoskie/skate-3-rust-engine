@@ -7,7 +7,12 @@ import shutil
 import time
 
 PROTECTED = {'data', 'assets', 'maps', 'logs', 'saves', 'settings', 'mods', 'custom-models', 'screenshots'}
-REQUIRED = {'skate3rust.exe', 'support/skate3setup.exe', 'support/skate3update.exe'}
+if os.environ.get('SKATE_UPDATE_TARGET', 'windows-x64').startswith('macos-'):
+    REQUIRED = {'Skate 3 Rust Engine.app/Contents/MacOS/skate3rust',
+                'Skate 3 Rust Engine.app/Contents/Resources/support/skate3setup',
+                'Skate 3 Rust Engine.app/Contents/Resources/support/skate3update'}
+else:
+    REQUIRED = {'skate3rust.exe', 'support/skate3setup.exe', 'support/skate3update.exe'}
 
 def safe_name(name):
     if not isinstance(name, str) or not name or '\\' in name or ':' in name or name.startswith('/'):
@@ -79,8 +84,13 @@ def rollback(root,tx):
     if journal is None:return
     if journal.get('protocol')==1:
         # Earlier updaters only backed up this fixed list.
-        names=['skate3rust.exe','support/skate3setup.exe','support/skate3update.exe',
-               'steam-relay/skate-steam-relay.exe','steam-relay/steam_api64.dll','release.json']
+        if os.environ.get('SKATE_UPDATE_TARGET', 'windows-x64').startswith('macos-'):
+            prefix='Skate 3 Rust Engine.app/Contents/'
+            names=[prefix+'MacOS/skate3rust',prefix+'Resources/support/skate3setup',prefix+'Resources/support/skate3update',
+                   prefix+'MacOS/steam-relay/skate-steam-relay',prefix+'MacOS/steam-relay/libsteam_api.dylib','release.json']
+        else:
+            names=['skate3rust.exe','support/skate3setup.exe','support/skate3update.exe',
+                   'steam-relay/skate-steam-relay.exe','steam-relay/steam_api64.dll','release.json']
         present=[n for n in names if (tx/'old'/n).is_file()]
     elif journal.get('protocol')==2:
         names=journal['names'];present=journal['present']

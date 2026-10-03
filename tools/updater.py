@@ -8,6 +8,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -21,12 +22,24 @@ API = f'https://api.github.com/repos/{REPO}/releases'
 ACTIONS_API = f'https://api.github.com/repos/{REPO}/actions'
 BRANCHES_API = f'https://api.github.com/repos/{REPO}/branches'
 WORKFLOW_FILE = 'release.yml'
-ARTIFACT_NAME = 'skate3rust-windows-x64'
-PACKAGE = 'skate3rust-windows-x64.zip'
-FILES = ('skate3rust.exe', 'support/skate3setup.exe', 'support/skate3update.exe',
-         'steam-relay/skate-steam-relay.exe', 'steam-relay/steam_api64.dll', 'release.json')
+TARGET = os.environ.get('SKATE_UPDATE_TARGET', 'windows-x64')
+ARTIFACT_NAME = f'skate3rust-{TARGET}'
+PACKAGE = ARTIFACT_NAME + '.zip'
+if TARGET.startswith('macos-'):
+    BUNDLE = 'Skate 3 Rust Engine.app/Contents/'
+    EXECUTABLE = BUNDLE + 'MacOS/skate3rust'
+    FILES = (EXECUTABLE, BUNDLE+'Resources/support/skate3setup', BUNDLE+'Resources/support/skate3update',
+             BUNDLE+'MacOS/steam-relay/skate-steam-relay', BUNDLE+'MacOS/steam-relay/libsteam_api.dylib', 'release.json')
+    EXECUTABLE_FILES = {EXECUTABLE, BUNDLE+'Resources/support/skate3setup',
+                        BUNDLE+'Resources/support/skate3update', BUNDLE+'MacOS/steam-relay/skate-steam-relay'}
+    PREFIX = ARTIFACT_NAME + '/'
+else:
+    EXECUTABLE = 'skate3rust.exe'
+    FILES = (EXECUTABLE, 'support/skate3setup.exe', 'support/skate3update.exe',
+             'steam-relay/skate-steam-relay.exe', 'steam-relay/steam_api64.dll', 'release.json')
+    EXECUTABLE_FILES = set()
+    PREFIX = ARTIFACT_NAME + '/'
 
-PREFIX = 'skate3rust-windows-x64/'
 DEFAULT_BRANCH_CHOICES = ('skyline-driving-update', 'main')
 
 
@@ -67,7 +80,7 @@ def identity(m):
         raise ValueError('Invalid release metadata')
     build = m.get('build')
     tag = m.get('tag')
-    if (m.get('schema') != 1 or m.get('target') != 'windows-x64'
+    if (m.get('schema') != 1 or m.get('target') != TARGET
             or m.get('repository') != REPO or not isinstance(build, int)
             or (build <= 0 and tag != 'development') or not isinstance(tag, str)
             or not isinstance(m.get('revision'), str)
@@ -162,7 +175,7 @@ def eligible(release, channel):
 def package_name(meta):
     # Rolling asset names are derived from a validated integer, never a path
     # supplied by release notes or an arbitrary manifest field.
-    return f'skate3rust-windows-x64-build-{identity(meta)}.zip' if meta['tag'] == 'experimental' else PACKAGE
+    return f'{ARTIFACT_NAME}-build-{identity(meta)}.zip' if meta['tag'] == 'experimental' else PACKAGE
 
 
 def release_candidates(assets, rolling):
@@ -170,7 +183,7 @@ def release_candidates(assets, rolling):
         return [('release.json', PACKAGE)]
     builds = sorted((int(m[1]) for name in assets
                      if (m := re.fullmatch(r'release-([1-9][0-9]*)\.json', name))), reverse=True)
-    return [(f'release-{n}.json', f'skate3rust-windows-x64-build-{n}.zip') for n in builds]
+    return [(f'release-{n}.json', f'{ARTIFACT_NAME}-build-{n}.zip') for n in builds]
 
 
 def merge_branch_names(names, preferred=''):
@@ -385,6 +398,8 @@ def stage(candidate, directory, cancel, progress):
             dest = directory / 'new' / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(payload)
+            if name in EXECUTABLE_FILES:
+                dest.chmod(0o755)
 
 
 def retry(operation):
@@ -435,7 +450,7 @@ def main(request=None):
             tkinter.messagebox.showerror('Update recovery', 'Could not restore the previous program. Close other game instances and try again. Backups remain in .update-transaction/old.\n' + str(error))
             return
         lock.close()
-        subprocess.Popen([str(root / 'skate3rust.exe'), *request['args']], cwd=request['cwd'])
+        subprocess.Popen([str(root / EXECUTABLE), *request['args']], cwd=request['cwd'])
         return
     import tkinter as tk
     from tkinter import ttk
@@ -445,7 +460,8 @@ def main(request=None):
     automatic = request['automatic']
     if automatic:
         win.withdraw()
-    settings_path = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'Skate3RustEngine/settings/updates.json'
+    settings_path = ((Path.home()/'Library/Application Support') if sys.platform=='darwin'
+                     else Path(os.environ.get('LOCALAPPDATA', str(Path.home())))) / 'Skate3RustEngine/settings/updates.json'
     settings = read_json(settings_path, {})
     channel = tk.StringVar(value=settings.get('channel') if settings.get('channel') in ('Stable', 'Latest', 'Branch') else 'Stable')
     branch = tk.StringVar(value=settings.get('branch') or 'skyline-driving-update')
@@ -534,10 +550,10 @@ def main(request=None):
             nonlocal repair_files, repair_after_update
             current = read_json(root / 'release.json', {})
             program_metadata(current)
-            with (root / 'skate3rust.exe').open('rb') as executable:
+            with (root / EXECUTABLE).open('rb') as executable:
                 digest = hashlib.file_digest(executable, 'sha256').hexdigest()
             if (current['revision'] != request['revision'] or str(current['build']) != request['build']
-                    or digest != current['files']['skate3rust.exe']):
+                    or digest != current['files'][EXECUTABLE]):
                 raise ValueError('This executable does not match its release metadata')
             repair_files = installer.mismatches(root, current)
             previous = read_json(tx/'old/release.json', {})
@@ -671,10 +687,10 @@ def main(request=None):
                             install(root, tx)
                         except Exception:
                             if not (tx / 'journal.json').exists():
-                                subprocess.Popen([str(root / 'skate3rust.exe'), *request['args']], cwd=request['cwd'])
+                                subprocess.Popen([str(root / EXECUTABLE), *request['args']], cwd=request['cwd'])
                             raise
                         lock.close()
-                        subprocess.Popen([str(root / 'skate3rust.exe'), *request['args']], cwd=request['cwd'])
+                        subprocess.Popen([str(root / EXECUTABLE), *request['args']], cwd=request['cwd'])
                     work('installed', finish)
                 elif kind == 'installed':
                     win.destroy()

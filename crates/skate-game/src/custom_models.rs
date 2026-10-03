@@ -137,6 +137,12 @@ impl CustomModels {
     }
 }
 pub(crate) fn library_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    return std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Library/Application Support/Skate3RustEngine/custom-characters");
+    #[cfg(not(target_os = "macos"))]
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
@@ -381,13 +387,16 @@ fn interact(
     }
 }
 fn start_import(directory: &Path, reference: &Path) -> Result<Import, String> {
-    let executable = std::env::current_exe()
+    let game_executable = std::env::current_exe()
         .map_err(|e| e.to_string())?
-        .parent()
-        .ok_or("Missing game directory")?
-        .join("support/skate3setup.exe");
+        .parent().ok_or("Missing game directory")?.to_path_buf();
+    #[cfg(target_os = "macos")]
+    let executable = game_executable.parent().ok_or("Invalid macOS application bundle")?
+        .join("Resources/support/skate3setup");
+    #[cfg(not(target_os = "macos"))]
+    let executable = game_executable.join("support/skate3setup.exe");
     if !executable.is_file() {
-        return Err("Character importer is missing. Restore support/skate3setup.exe from the complete Windows package.".into());
+        return Err("Character importer is missing. Restore the complete release package.".into());
     }
     let jobs = directory.join("jobs");
     std::fs::create_dir_all(&jobs).map_err(|e| e.to_string())?;

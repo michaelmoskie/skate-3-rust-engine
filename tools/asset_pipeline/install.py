@@ -19,8 +19,12 @@ def map_workers():
             # briefly hold several copies of geometry and textures.
             count=min(count,max(1,(memory.available-2*1024**3)//(3*1024**3)))
     return count
-XISO_URL='https://github.com/XboxDev/extract-xiso/releases/download/build-202505152050/extract-xiso-Win64_Release.zip'
-XISO_SHA='fec88d03c7efd6205ab09be4abba70c0afd0eb27a5709f0a6235b828ba5ac11e'
+if sys.platform == 'darwin':
+    XISO_URL='https://github.com/XboxDev/extract-xiso/releases/download/build-202505152050/extract-xiso_macOS.zip'
+    XISO_SHA='371e4a800086e875257ddafc037970789fb942b69dbf8ab0ba8301ff7799fef0'
+else:
+    XISO_URL='https://github.com/XboxDev/extract-xiso/releases/download/build-202505152050/extract-xiso-Win64_Release.zip'
+    XISO_SHA='fec88d03c7efd6205ab09be4abba70c0afd0eb27a5709f0a6235b828ba5ac11e'
 
 def digest(path):
     with path.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
@@ -103,8 +107,9 @@ def dependency(cache,name,url,sha,report):
     if not marker.is_file():
         unpack_zip(download(url,sha,cache,report),folder)
         marker.write_text(sha)
-    executable=next(folder.rglob(name+'.exe'),None)
+    executable=next(folder.rglob(name+'.exe' if os.name=='nt' else name),None)
     if executable is None:raise RuntimeError('Missing downloaded tool: '+name)
+    if os.name!='nt':executable.chmod(executable.stat().st_mode|0o700)
     return executable
 
 def run(args,log,report):

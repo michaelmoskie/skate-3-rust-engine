@@ -105,8 +105,11 @@ impl Steam {
             .parent()
             .unwrap()
             .to_path_buf();
-        let helper = dir.join("steam-relay/skate-steam-relay.exe");
-        if !helper.is_file() || !dir.join("steam-relay/steam_api64.dll").is_file() {
+        #[cfg(target_os = "macos")]
+        let (helper, library) = (dir.join("steam-relay/skate-steam-relay"), dir.join("steam-relay/libsteam_api.dylib"));
+        #[cfg(not(target_os = "macos"))]
+        let (helper, library) = (dir.join("steam-relay/skate-steam-relay.exe"), dir.join("steam-relay/steam_api64.dll"));
+        if !helper.is_file() || !library.is_file() {
             return Err(
                 "Steam relay files missing; solo and direct multiplayer remain available".into(),
             );

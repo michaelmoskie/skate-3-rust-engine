@@ -1,0 +1,50 @@
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Check game and Steam relay
+        run: |
+          cargo check --locked -p skate-game --bin skate3rust --no-default-features
+          cargo check --locked -p skate-steam-relay
+      - name: Test platform adapters and release tools
+        run: |
+          cargo test --locked -p skate-game --bin skate3rust --no-default-features input::platform
+          python3 -m unittest tools.test_updater tools.test_update_install
+
+  package:
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Install packaging Python
+        run: brew install python@3.13 python-tk@3.13
+      - name: Build application bundle
+        env:
+          PYTHON: /opt/homebrew/bin/python3.13
+          RELEASE_TAG: development
+        run: scripts/Build-macOS-Release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skate3rust-macos-arm64
+          path: |
+            target/skate3rust-macos-arm64.zip
+            target/skate3rust-macos-arm64.zip.sha256
+            target/release.json
+          if-no-files-found: error

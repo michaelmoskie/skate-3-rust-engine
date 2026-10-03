@@ -398,7 +398,7 @@ def convert_file(source, reference, destination, fbx_tool, profile=None, include
         normalized = source
         log = ''
         if source.suffix.lower()=='.fbx':
-            require(Path(fbx_tool).is_file(),'FBX2glTF.exe is missing; run the converter setup')
+            require(Path(fbx_tool).is_file(),'FBX2glTF is missing; restore the complete release package')
             normalized = temp/'source.glb'
             proc = subprocess.run([str(fbx_tool),'--binary','--input',str(source),'--output',str(temp/'source'),
                                    '--fbx-temp-dir',str(temp),'--compute-normals','missing','--pbr-metallic-roughness'],

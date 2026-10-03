@@ -196,14 +196,11 @@ fn lightmap_dimensions(slot: u32) -> vec2<u32> {
     return page_dimensions(slots[slot].lightmap);
 }
 
-/// `textureSampleBias` in the reference; bias cannot be used under non-uniform
-/// control flow, so the caller's mip bias becomes a gradient scale instead.
-/// `exp2(bias)` is the mip-ratio the bias represented.
+/// Cube-array gradients are three-dimensional. Naga currently lowers the
+/// explicit-gradient form to Metal's two-dimensional gradient overload, so use
+/// the reference shader's native mip-bias path instead.
 fn sample_environment(slot: u32, direction: vec3<f32>, bias: f32) -> vec4<f32> {
     let packed = slots[slot].environment;
     if packed == ABSENT { return vec4<f32>(0.0); }
-    let scale = exp2(bias);
-    let ddx = dpdx(direction)*scale;
-    let ddy = dpdy(direction)*scale;
-    return textureSampleGrad(cubes,repeat_sampler,direction,page_layer(packed),ddx,ddy);
+    return textureSampleBias(cubes,repeat_sampler,direction,page_layer(packed),bias);
 }

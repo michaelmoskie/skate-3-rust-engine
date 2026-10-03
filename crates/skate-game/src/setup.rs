@@ -146,7 +146,20 @@ pub(crate) fn asset_root() -> Result<PathBuf, String> {
         ));
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let root = exe.parent().ok_or("No executable directory")?;
+    let executable_root = exe.parent().ok_or("No executable directory")?;
+    #[cfg(target_os = "macos")]
+    let (root, support) = if executable_root.file_name().is_some_and(|name| name == "MacOS") {
+        let contents = executable_root.parent().ok_or("Invalid macOS application bundle")?;
+        let bundle = contents.parent().ok_or("Invalid macOS application bundle")?;
+        (bundle.parent().ok_or("Invalid macOS release directory")?, contents.join("Resources/support"))
+    } else { (executable_root, executable_root.join("support")) };
+    #[cfg(not(target_os = "macos"))]
+    let root = executable_root;
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(PathBuf::from)
+        .ok_or("HOME is unavailable")?
+        .join("Library/Application Support/Skate3RustEngine/data");
+    #[cfg(not(target_os = "macos"))]
     let base = root.join("data");
     let mut expected_customiser = None;
     let mut equivalence = None;
@@ -183,10 +196,13 @@ pub(crate) fn asset_root() -> Result<PathBuf, String> {
             return Ok(assets.clone());
         }
     }
+    #[cfg(target_os = "macos")]
+    let setup = support.join("skate3setup");
+    #[cfg(not(target_os = "macos"))]
     let setup = root.join("support/skate3setup.exe");
     if !setup.is_file() {
         return Err(
-            "This copy has not been set up. Use the complete Windows package, pass --assets DIRECTORY, or set SKATE3_ASSETS for development.".into(),
+            "This copy has not been set up. Use the complete release package, pass --assets DIRECTORY, or set SKATE3_ASSETS for development.".into(),
         );
     }
     let mut command = Command::new(setup);

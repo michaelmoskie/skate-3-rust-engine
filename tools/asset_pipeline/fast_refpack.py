@@ -1,9 +1,12 @@
 """Optional bundled native RefPack backend; source-only tools retain Python."""
 import ctypes
+import os
+import sys
 from pathlib import Path
 
 _library=None
-for path in (Path(__file__).with_name('refpack.dll'),Path(__file__).resolve().parents[2]/'target/native/refpack.dll'):
+suffix = '.dll' if os.name == 'nt' else ('.dylib' if sys.platform == 'darwin' else '.so')
+for path in (Path(__file__).with_name('refpack'+suffix),Path(__file__).resolve().parents[2]/('target/native/refpack'+suffix)):
     if path.is_file():
         _library=ctypes.CDLL(str(path))
         _library.skate_refpack.argtypes=[ctypes.c_char_p,ctypes.c_size_t,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_size_t,ctypes.c_bool]

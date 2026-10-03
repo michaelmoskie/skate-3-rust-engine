@@ -11,15 +11,33 @@ pub(crate) struct Updater {
 
 fn helper_command(recover: bool, automatic: bool) -> Result<(Command, PathBuf, PathBuf), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let root = exe.parent().ok_or("Missing program directory")?;
+    let executable_root = exe.parent().ok_or("Missing program directory")?;
+    #[cfg(target_os = "macos")]
+    let (root, packaged_helper) = if executable_root.file_name().is_some_and(|name| name == "MacOS") {
+        let contents = executable_root.parent().ok_or("Invalid macOS application bundle")?;
+        let bundle = contents.parent().ok_or("Invalid macOS application bundle")?;
+        (bundle.parent().ok_or("Invalid macOS release directory")?, contents.join("Resources/support/skate3update"))
+    } else { (executable_root, executable_root.join("support/skate3update")) };
+    #[cfg(not(target_os = "macos"))]
+    let root = executable_root;
     if !root.join("release.json").is_file() {
         return Err("Updates are available in packaged releases.".into());
     }
     let unique = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
     let temp = std::env::temp_dir().join(format!("skate-update-{}-{unique}", std::process::id()));
     std::fs::create_dir(&temp).map_err(|e| e.to_string())?;
-    let helper = temp.join("skate3update.exe");
-    std::fs::copy(root.join("support/skate3update.exe"), &helper).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let helper = temp.join("skate3update");
+    #[cfg(not(target_os = "macos"))]
+    let (helper, packaged_helper) = (temp.join("skate3update.exe"), root.join("support/skate3update.exe"));
+    std::fs::copy(packaged_helper, &helper).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&helper).map_err(|e| e.to_string())?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper, permissions).map_err(|e| e.to_string())?;
+    }
     let signal = temp.join("ready");
     let request = temp.join("request.json");
     let data = serde_json::json!({
@@ -41,7 +59,15 @@ fn helper_command(recover: bool, automatic: bool) -> Result<(Command, PathBuf, P
 /// Local recovery happens before the supervisor opens the executable again.
 pub(crate) fn recover() -> Result<bool, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if !exe.parent().is_some_and(|p| p.join(".update-transaction/journal.json").exists()) {
+    let executable_root = exe.parent().ok_or("Missing program directory")?;
+    #[cfg(target_os = "macos")]
+    let root = if executable_root.file_name().is_some_and(|name| name == "MacOS") {
+        executable_root.parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+            .ok_or("Invalid macOS release directory")?
+    } else { executable_root };
+    #[cfg(not(target_os = "macos"))]
+    let root = executable_root;
+    if !root.join(".update-transaction/journal.json").exists() {
         return Ok(false);
     }
     let (mut command, _, _) = helper_command(true, false)?;
