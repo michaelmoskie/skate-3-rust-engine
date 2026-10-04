@@ -1,4 +1,5 @@
 mod fps_overlay;
+mod gameplay_audio;
 mod animation;
 mod crash_report;
 mod crash_context;

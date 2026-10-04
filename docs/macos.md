@@ -19,6 +19,23 @@ The launcher automatically uses the active installation under
 when overriding that location for development or test assets. The game assets
 are not part of this repository.
 
+## Audio
+
+The first gameplay-audio pass decodes the owned `WHEEL_SKID_BANK.abk` bank into
+a local PCM WAV and plays it while the skater is moving. Install the decoder
+once, then extract the asset into a prepared installation:
+
+```sh
+brew install vgmstream
+python3 tools/asset_pipeline/audio_extract.py \
+  --game-root "/path/to/extracted/Skate 3" \
+  --assets "$HOME/Library/Application Support/Skate3RustEngine/data/installations/<id>/assets"
+```
+
+The decoded WAV stays in the local installation and is not included in source
+control or release packages. More gameplay banks can be added through the same
+owned-asset extraction path.
+
 ## Packaged application
 
 Run `scripts/Build-macOS-Release.sh`. It creates an Apple Silicon application
